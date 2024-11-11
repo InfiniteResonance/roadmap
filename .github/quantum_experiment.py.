@@ -1,0 +1,23 @@
+try:
+    import cirq
+except ImportError:
+    print("installing cirq...")
+    !pip install --quiet cirq
+    print("installed cirq.")
+    import cirq
+
+q0 = cirq.GridQubit(0, 0)
+
+# Create a circuit
+circuit = cirq.Circuit()
+
+# Add gates to the circuit
+circuit.append(cirq.X(q0))  # Apply X gate
+circuit.append(cirq.measure(q0))  # Measure the qubit
+
+# Simulate the circuit
+simulator = cirq.Simulator()
+result = simulator.run(circuit, repetitions=10)
+
+# Print the results
+print(result)
