@@ -1,0 +1,83 @@
+name: "CodeQL Analysis"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 12 * * 1' # Runs every Monday at 12:00 UTC
+
+env:
+  DEFAULT_BRANCH: main
+
+jobs:
+  analyze:
+    name: Analyze Code
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        language: [javascript, python]  # Allows running separately per language
+
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+      issues: write  # Required for issue creation
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Dependencies
+        run: |
+          if [[ "${{ matrix.language }}" == "python" && -f "requirements.txt" ]]; then pip install -r requirements.txt; fi
+          if [[ "${{ matrix.language }}" == "javascript" && -f "package.json" ]]; then npm install; fi
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: +security-extended, +security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+      - name: Upload SARIF Results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results  # Uploads SARIF directory instead of a file
+
+      - name: Check for Security Issues & Create GitHub Issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const sarifPath = 'results';
+            if (fs.existsSync(sarifPath)) {
+              const sarifFiles = fs.readdirSync(sarifPath).filter(file => file.endsWith('.sarif'));
+              if (sarifFiles.length > 0) {
+                const issueTitle = "🚨 CodeQL Security Issues Detected";
+                const issueBody = "CodeQL analysis detected security vulnerabilities. Please review the SARIF report in the Security tab.";
+                
+                const { data: issues } = await github.rest.issues.listForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  state: "open",
+                  labels: "security"
+                });
+
+                if (!issues.some(issue => issue.title === issueTitle)) {
+                  await github.rest.issues.create({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    title: issueTitle,
+                    body: issueBody,
+                    labels: ["security", "CodeQL"]
+                  });
+                }
+              }
+            }
